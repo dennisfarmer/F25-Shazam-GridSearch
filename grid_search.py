@@ -76,7 +76,7 @@ def add_noise(audio, snr_dB: float):
     
     We use the root mean square (RMS) of the amplitude for the 
     signal and noise. To achieve the desired SNR for our final 
-    audio, we calculate a weight to multiply the brownian noise by:
+    audio, we calculate a weight to multiply the noise by:
 
     ```
     A_noise_initial * noise_weight = A_noise
@@ -151,63 +151,6 @@ def augment_samples(sr, snr):
              } for s in zip(sample_slices, sample_slices_noisy)
         ])
     return samples
-
-
-def old_simulate_microphone_from_source(y, sr):
-
-    # ensure 1D
-    y = np.asarray(y)
-    if y.ndim > 1:
-        y = np.mean(y, axis=0)
-
-    # bandwidth limitation via resampling
-    target_sr = min(8000, sr)
-    if target_sr < sr:
-        y = librosa.resample(y, orig_sr=sr, target_sr=target_sr)
-        y = librosa.resample(y, orig_sr=target_sr, target_sr=sr)
-
-    # 2) simple dynamic range compressor (frame RMS -> dB -> gain reduction)
-    frame_len = max(1, int(0.02 * sr))  # 20 ms window
-    window = np.ones(frame_len) / frame_len
-    power = np.convolve(y * y, window, mode="same")
-    rms = np.sqrt(power + 1e-12)
-    db = 20.0 * np.log10(rms + 1e-12)
-
-    thresh_db = -25.0   # threshold (dB)
-    ratio = 4.0         # compression ratio
-    over_db = np.maximum(db - thresh_db, 0.0)
-    reduction_db = over_db * (1.0 - 1.0 / ratio)
-
-    # smooth gain changes to simulate attack/release
-    #smooth_len = max(1, int(0.01 * sr))  # 10 ms smoothing
-    #smooth_k = np.ones(smooth_len) / smooth_len
-    #reduction_db = np.convolve(reduction_db, smooth_k, mode="same")
-
-    #gain = 10.0 ** (-reduction_db / 20.0)
-    #gain = 10.0 ** (-reduction_db / 10.0)
-    gain = 10.0 ** (-reduction_db / 10.0)
-    y_compressed = y * gain
-
-    # makeup gain to restore perceived loudness
-    makeup_db = 6.0
-    y_compressed *= 10.0 ** (makeup_db / 20.0)
-
-    # 3) soft clipping to simulate mic preamp saturation
-    #y_compressed = np.tanh(y_compressed)
-
-    # 4) reduce effective bit depth (quantization noise)
-    #quant_bits = 16
-    #max_val = 2 ** (quant_bits - 1) - 1
-    #y_compressed = np.round(y_compressed * max_val) / float(max_val)
-
-    # 5) add low-level microphone noise/hiss
-    #noise_level = 1e-3 * max(1.0, np.std(y_compressed))
-    #y_compressed = y_compressed + np.random.normal(0.0, noise_level, size=y_compressed.shape)
-
-    # clamp to [-1, 1]
-    #y_compressed = np.clip(y_compressed, -1.0, 1.0)
-
-    return y_compressed
 
 def simulate_microphone_from_source(y, sr, drc_threshold=-40, drc_ratio=4.0, drc_attack=10, drc_release=50):
     """
