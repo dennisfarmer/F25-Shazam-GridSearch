@@ -382,7 +382,7 @@ class GridViewer():
     - *Fingerprint size*: how much disk space is used?
     - *Search speed*: how long does it take to search for a match?
     """
-    def __init__(self, parameter_grid):
+    def __init__(self):
         self.database = sqlite3.connect(":memory:")
         self.filename = "sql/gridviewer.db"
         self.cursor = self.database.cursor()
@@ -395,14 +395,6 @@ class GridViewer():
             "fanout_t INTEGER, "
             "fanout_f INTEGER);"
         )
-        for paramset_idx, (cm_window_size, candidates_per_band, bands, fanout_t, fanout_f) in enumerate(parameter_grid):
-            self.cursor.execute(
-                "INSERT INTO paramsets "
-                "(paramset_idx, cm_window_size, candidates_per_band, bands, fanout_t, fanout_f) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (paramset_idx, cm_window_size, candidates_per_band, pickle.dumps(bands), fanout_t, fanout_f)
-            )
-        self.database.commit()
 
         self.cursor.execute(
             "CREATE TABLE results ( "
@@ -448,6 +440,16 @@ class GridViewer():
             "PRIMARY KEY (paramset_idx, snr)"
             ")"
         )
+
+    def insert_parameter_grid(self, parameter_grid):
+        for paramset_idx, (cm_window_size, candidates_per_band, bands, fanout_t, fanout_f) in enumerate(parameter_grid):
+            self.cursor.execute(
+                "INSERT INTO paramsets "
+                "(paramset_idx, cm_window_size, candidates_per_band, bands, fanout_t, fanout_f) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (paramset_idx, cm_window_size, candidates_per_band, pickle.dumps(bands), fanout_t, fanout_f)
+            )
+        self.database.commit()
 
     def add_result(self, paramset_idx, results, snr):
         """
@@ -518,6 +520,14 @@ class GridViewer():
         self.filename = filename
         with sqlite3.connect(filename) as export_db:
             self.database.backup(export_db)
+    
+    def from_sqlite(self, filename="gridviewer.db"):
+        if not os.path.exists(filename):
+            raise FileNotFoundError(f"SQLite file not found: {filename}")
+
+        self.database = sqlite3.connect(filename)
+        self.cursor = self.database.cursor()
+        self.filename = filename
 
 
     def log_exception(self, paramset_idx, stacktrace, snr):
@@ -803,7 +813,8 @@ def run_grid_search(parameter_space_subset: dict[str,list] = None, signal_to_noi
             )
         )
 
-    grid_viewer = GridViewer(parameter_grid)
+    grid_viewer = GridViewer()
+    grid_viewer.insert_parameter_grid(parameter_grid)
 
     set_parameters()
     create_tables()
